@@ -17,7 +17,7 @@ package com.squareup.workflow.internal
 
 import com.squareup.workflow.Snapshot
 import com.squareup.workflow.StatefulWorkflow
-import com.squareup.workflow.ExperimentalWorkflow
+import com.squareup.workflow.ExperimentalWorkflowApi
 import com.squareup.workflow.Worker
 import com.squareup.workflow.Workflow
 import com.squareup.workflow.WorkflowAction
@@ -50,7 +50,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  * hard-coded values added to worker contexts. It must not contain a [Job] element (it would violate
  * structured concurrency).
  */
-@OptIn(ExperimentalWorkflow::class)
+@OptIn(ExperimentalWorkflowApi::class)
 internal class WorkflowNode<PropsT, StateT, OutputT : Any, RenderingT>(
   val id: WorkflowId<PropsT, OutputT, RenderingT>,
   workflow: StatefulWorkflow<PropsT, StateT, OutputT, RenderingT>,
