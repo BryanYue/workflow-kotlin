@@ -58,7 +58,7 @@ data class WorkflowTestParams<out StateT>(
     object StartFresh : StartMode<Nothing>()
 
     /**
-     * Starts the workflow from its initial state (as specified by
+     * Starts the root workflow from its initial state (as specified by
      * [initial state][com.squareup.workflow.StatefulWorkflow.initialState]), with a non-null
      * snapshot.  Only applies to [StatefulWorkflow][com.squareup.workflow.StatelessWorkflow]s.
      *
@@ -74,9 +74,9 @@ data class WorkflowTestParams<out StateT>(
     data class StartFromWorkflowSnapshot(val snapshot: Snapshot) : StartMode<Nothing>()
 
     /**
-     * Starts the workflow from its initial state (as specified by
+     * Starts the entire workflow tree from its initial state (as specified by
      * [initial state][com.squareup.workflow.StatefulWorkflow.initialState]), with a non-null
-     * snapshot. Only applies to [StatefulWorkflow][com.squareup.workflow.StatelessWorkflow]s.
+     * snapshot.
      *
      * This differs from [StartFromWorkflowSnapshot] because it represents a complete snapshot of
      * the entire tree, not just the individual snapshot for the root workflow.

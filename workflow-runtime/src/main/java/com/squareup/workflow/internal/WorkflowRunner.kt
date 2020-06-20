@@ -19,30 +19,36 @@ import com.squareup.workflow.ExperimentalWorkflow
 import com.squareup.workflow.RenderingAndSnapshot
 import com.squareup.workflow.StatefulWorkflow
 import com.squareup.workflow.TreeSnapshot
-import com.squareup.workflow.Workflow
 import com.squareup.workflow.diagnostic.IdCounter
 import com.squareup.workflow.diagnostic.WorkflowDiagnosticListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.selects.select
 import kotlin.coroutines.EmptyCoroutineContext
 
+/**
+ * @param snapshot The [TreeSnapshot] used to restore the children of this workflow. Note that
+ * [TreeSnapshot.workflowSnapshot] is ignored, but should be used by the caller to initialize
+ * `initialState`.
+ */
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalWorkflow::class)
-internal class WorkflowRunner<PropsT, OutputT : Any, RenderingT>(
+internal class WorkflowRunner<PropsT, StateT, OutputT : Any, RenderingT>(
   scope: CoroutineScope,
-  protoWorkflow: Workflow<PropsT, OutputT, RenderingT>,
-  props: StateFlow<PropsT>,
+  id: WorkflowNodeId,
+  private val workflow: StatefulWorkflow<PropsT, StateT, OutputT, RenderingT>,
+  props: Flow<PropsT>,
   snapshot: TreeSnapshot,
+  initialProps: PropsT,
+  initialState: StateT,
   private val diagnosticListener: WorkflowDiagnosticListener?
 ) {
-  private val workflow = protoWorkflow.asStatefulWorkflow()
   private val idCounter = if (diagnosticListener != null) IdCounter() else null
-  private var currentProps: PropsT = props.value
+  private var currentProps = initialProps
 
   // Props is a StateFlow, it will immediately produce an item. Without additional handling, the
   // first call to nextOutput will see that new props value and trigger another render pass, which
@@ -55,21 +61,20 @@ internal class WorkflowRunner<PropsT, OutputT : Any, RenderingT>(
   // which can't happen until the dropWhile predicate evaluates to false, after which the dropWhile
   // predicate will never be invoked again, so it's fine to read the mutable value here.
   @OptIn(FlowPreview::class)
-  private val propsChannel = props.dropWhile { it == currentProps }
+  private val propsChannel = props.dropWhile { it == initialProps }
       .produceIn(scope)
 
   private val rootNode = WorkflowNode(
-      id = workflow.id(),
+      id = id,
       workflow = workflow,
-      initialProps = currentProps,
+      initialProps = initialProps,
       snapshot = snapshot,
       baseContext = scope.coroutineContext,
       workerContext = EmptyCoroutineContext,
       parentDiagnosticId = null,
       diagnosticListener = diagnosticListener,
       idCounter = idCounter,
-      // TODO(https://github.com/square/workflow/issues/1192) Migrate testing infra.
-      initialState = null
+      initialState = initialState
   )
 
   /**

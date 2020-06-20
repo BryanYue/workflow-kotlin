@@ -15,6 +15,7 @@
  */
 package com.squareup.workflow.internal
 
+import com.squareup.workflow.StatefulWorkflow
 import com.squareup.workflow.TreeSnapshot
 import com.squareup.workflow.Worker
 import com.squareup.workflow.Workflow
@@ -252,10 +253,17 @@ class WorkflowRunnerTest {
     assertEquals("foo", cancellationException!!.message)
   }
 
-  @Suppress("TestFunctionName")
+  @Suppress("TestFunctionName", "UNCHECKED_CAST")
   private fun <P, O : Any, R> WorkflowRunner(
     workflow: Workflow<P, O, R>,
     props: StateFlow<P>
-  ) =
-    WorkflowRunner(scope, workflow, props, TreeSnapshot.NONE, null)
+  ): WorkflowRunner<P, Any?, O, R> {
+    val statefulWorkflow = workflow.asStatefulWorkflow() as StatefulWorkflow<P, Any?, O, R>
+    val initialProps = props.value
+    val initialState = statefulWorkflow.initialState(initialProps, null)
+    return WorkflowRunner(
+        scope, workflow.id(), statefulWorkflow, props, TreeSnapshot.NONE, initialProps,
+        initialState, diagnosticListener = null
+    )
+  }
 }

@@ -125,6 +125,7 @@ class WorkflowTester<PropsT, OutputT : Any, RenderingT> @TestOnly internal const
    * Sends [input] to the workflow.
    */
   fun sendProps(input: PropsT) {
+    // Can't use sendBlocking because we need to timeout.
     runBlocking {
       withTimeout(DEFAULT_TIMEOUT_MS) {
         props.send(input)
