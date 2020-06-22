@@ -221,13 +221,13 @@ fun <PropsT, OutputT : Any, RenderingT> renderWorkflowIn(
   @Suppress("UNCHECKED_CAST")
   val statefulWorkflow =
     workflow.asStatefulWorkflow() as StatefulWorkflow<PropsT, Any?, OutputT, RenderingT>
-  val initialState = {
+  val workflowSeed = {
     val initialProps = props.value
     val initialState = statefulWorkflow.initialState(initialProps, initialSnapshot.workflowSnapshot)
     Pair(initialProps, initialState)
   }
   return renderWorkflowIn(
-      statefulWorkflow, scope, props, initialSnapshot, initialState, diagnosticListener, onOutput
+      statefulWorkflow, scope, props, initialSnapshot, workflowSeed, diagnosticListener, onOutput
   )
 }
 
@@ -308,6 +308,9 @@ fun <PropsT, OutputT : Any, RenderingT> renderWorkflowIn(
  * An optional [WorkflowDiagnosticListener] that will receive all diagnostic events from the
  * runtime.
  *
+ * @param checkIdempotentRender
+ * TODO
+ *
  * @param onOutput
  * A function that will be called whenever the root workflow emits an [OutputT]. This is a suspend
  * function, and is invoked synchronously within the runtime: if it suspends, the workflow runtime
@@ -327,6 +330,7 @@ fun <PropsT, StateT, OutputT : Any, RenderingT> renderWorkflowIn(
   initialSnapshot: TreeSnapshot = TreeSnapshot.NONE,
   workflowSeed: () -> Pair<PropsT, StateT>,
   diagnosticListener: WorkflowDiagnosticListener? = null,
+  checkIdempotentRender: Boolean = false,
   onOutput: suspend (OutputT) -> Unit
 ): StateFlow<RenderingAndSnapshot<RenderingT>> {
   // Note: This ID will not actually represent the real workflow passed to the stateful
@@ -340,6 +344,7 @@ fun <PropsT, StateT, OutputT : Any, RenderingT> renderWorkflowIn(
   // The runtime started event must be emitted before any other events.
   diagnosticListener?.onRuntimeStarted(scope, id.typeDebugString)
   val (initialProps, initialState) = workflowSeed()
+  // TODO handle checkIdempotentRender
   val runner = WorkflowRunner(
       scope, id, workflow, props, initialSnapshot, initialProps, initialState, diagnosticListener
   )

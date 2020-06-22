@@ -120,3 +120,12 @@ internal fun TreeSnapshot.Companion.parseFrom(snapshot: Snapshot?): TreeSnapshot
             .readByteString()
     )
   } ?: NONE
+
+/**
+ * Helper function to invoke [StatefulWorkflow.initialState] with [TreeSnapshot.workflowSnapshot].
+ */
+// TODO can we figure out a way to remove this?
+fun <P, S> StatefulWorkflow<P, S, *, *>.initialState(
+  props: P,
+  snapshot: TreeSnapshot
+): S = initialState(props, snapshot.workflowSnapshot)

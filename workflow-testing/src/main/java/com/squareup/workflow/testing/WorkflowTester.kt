@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@file:Suppress("EXPERIMENTAL_API_USAGE", "DeprecatedCallableAddReplaceWith")
+@file:Suppress("EXPERIMENTAL_API_USAGE", "DeprecatedCallableAddReplaceWith", "DEPRECATION")
 
 package com.squareup.workflow.testing
 
@@ -22,8 +22,13 @@ import com.squareup.workflow.Snapshot
 import com.squareup.workflow.StatefulWorkflow
 import com.squareup.workflow.TreeSnapshot
 import com.squareup.workflow.Workflow
+import com.squareup.workflow.initialState
 import com.squareup.workflow.internal.util.UncaughtExceptionGuard
+import com.squareup.workflow.renderWorkflowIn
+import com.squareup.workflow.testing.WorkflowTestParams.StartMode.StartFresh
+import com.squareup.workflow.testing.WorkflowTestParams.StartMode.StartFromCompleteSnapshot
 import com.squareup.workflow.testing.WorkflowTestParams.StartMode.StartFromState
+import com.squareup.workflow.testing.WorkflowTestParams.StartMode.StartFromWorkflowSnapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -61,17 +66,15 @@ import kotlin.coroutines.EmptyCoroutineContext
  *    - Send a new [PropsT] to the root workflow.
  */
 class WorkflowTester<PropsT, OutputT : Any, RenderingT> @TestOnly internal constructor(
-  private val scope: CoroutineScope,
   private val props: SendChannel<PropsT>,
   private val renderingsAndSnapshotsFlow: Flow<RenderingAndSnapshot<RenderingT>>,
-  private val outputsFlow: Flow<OutputT>
+  private val outputs: ReceiveChannel<OutputT>
 ) {
 
   private val renderings = Channel<RenderingT>(capacity = UNLIMITED)
   private val snapshots = Channel<TreeSnapshot>(capacity = UNLIMITED)
-  private val outputs = Channel<OutputT>(capacity = UNLIMITED)
 
-  internal fun collectFromWorkflow() {
+  internal fun collectFromWorkflowIn(scope: CoroutineScope) {
     // Subscribe before starting to ensure we get all the emissions.
     // We use NonCancellable so that if context is already cancelled, the operator chains below
     // are still allowed to handle the exceptions from WorkflowHost streams explicitly, since they
@@ -87,22 +90,7 @@ class WorkflowTester<PropsT, OutputT : Any, RenderingT> @TestOnly internal const
           snapshots.close(e)
         }
         .launchIn(realScope)
-
-    outputsFlow
-        .onEach { outputs.send(it) }
-        .onCompletion { e -> outputs.close(e) }
-        .launchIn(realScope)
   }
-
-  /**
-   * Runs the test from [block], and then cancels the workflow runtime after it's done.
-   */
-  internal fun <T> runTest(block: WorkflowTester<PropsT, OutputT, RenderingT>.() -> T): T =
-    try {
-      block(this)
-    } finally {
-      scope.cancel(CancellationException("Test finished"))
-    }
 
   /**
    * True if the workflow has emitted a new rendering that is ready to be consumed.
@@ -281,18 +269,48 @@ fun <T, PropsT, StateT, OutputT : Any, RenderingT>
     exceptionGuard.reportUncaught(throwable)
   }
 
-  // TODO(https://github.com/square/workflow/issues/1192) Migrate to renderWorkflowIn.
-  val tester = launchWorkflowForTestFromStateIn(
-      scope = CoroutineScope(Unconfined + context + uncaughtExceptionHandler),
-      workflow = this@test,
-      props = propsChannel.asFlow(),
-      testParams = testParams
-  ) { session ->
-    WorkflowTester(this, propsChannel, session.renderingsAndSnapshots, session.outputs)
-        .apply { collectFromWorkflow() }
+  val scope = CoroutineScope(Unconfined + context + uncaughtExceptionHandler)
+  val propsFlow = propsChannel.asFlow()
+
+  var treeSnapshot = TreeSnapshot.NONE
+  fun seedFromTreeSnapshot(): () -> Pair<PropsT, StateT> = {
+    val initialState = initialState(props, treeSnapshot)
+    Pair(props, initialState)
   }
 
+  val workflowSeed: () -> Pair<PropsT, StateT> = when (val startFrom = testParams.startFrom) {
+    StartFresh -> seedFromTreeSnapshot()
+    is StartFromWorkflowSnapshot -> {
+      treeSnapshot = TreeSnapshot.forRootOnly(startFrom.snapshot)
+      seedFromTreeSnapshot()
+    }
+    is StartFromCompleteSnapshot -> {
+      treeSnapshot = startFrom.snapshot
+      seedFromTreeSnapshot()
+    }
+    is StartFromState -> {
+      { Pair(props, startFrom.state) }
+    }
+  }
+
+  val outputsChannel = Channel<OutputT>(UNLIMITED)
+  val renderingsAndSnapshots = renderWorkflowIn(
+      workflow = this,
+      scope = scope,
+      props = propsFlow,
+      snapshot = treeSnapshot,
+      workflowSeed = workflowSeed,
+      onOutput = outputsChannel::send,
+      checkIdempotentRender = true
+  )
+  val tester = WorkflowTester(propsChannel, renderingsAndSnapshots, outputsChannel)
+  tester.collectFromWorkflowIn(scope)
+
   return exceptionGuard.runRethrowingUncaught {
-    tester.runTest(block)
+    try {
+      block(tester)
+    } finally {
+      scope.cancel(CancellationException("Test finished"))
+    }
   }
 }
